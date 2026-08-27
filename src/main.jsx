@@ -85,7 +85,16 @@ function UploadModal({user,onClose,onCreated}){
         const path=`${user.id}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
         const upload=await supabase.storage.from('photos').upload(path,file,{upsert:false,contentType:file.type}); if(upload.error) throw upload.error;
         const publicUrl=supabase.storage.from('photos').getPublicUrl(path).data.publicUrl;
-        const {data,error}=await supabase.from('photos').insert({user_id:user.id,title:photo.title,description:photo.description,location_name:photo.location_name,city:photo.city,latitude:photo.lat,longitude:photo.lng,image_url:publicUrl,camera:camera||null,lens:lens||null,conditions:photo.conditions,tags:photo.tags,location_precision:privacy}).select().single(); if(error)throw error; photo=data;
+        const {data,error}=await supabase.from('photos').insert({user_id:user.id,title:photo.title,description:photo.description,location_name:photo.location_name,city:photo.city,latitude:photo.lat,longitude:photo.lng,image_url:publicUrl,camera:camera||null,lens:lens||null,conditions:photo.conditions,tags:photo.tags,location_precision:privacy}).select().single(); if(error)throw error; photo={
+  ...data,
+  type:'community',
+  lat:data.latitude,
+  lng:data.longitude,
+  photographer:user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Photographer',
+  profile_name:user?.user_metadata?.display_name || user?.email?.split('@')[0] || 'Photographer',
+  likes:0,
+  comments:0
+};
       } else { const arr=getLocal('lensatlas_photos',[]); arr.unshift(photo); setLocal('lensatlas_photos',arr); }
       onCreated(photo); onClose();
     }catch(err){setStatus(err.message||'Could not publish this photo.')} finally{setBusy(false)}
@@ -93,7 +102,9 @@ function UploadModal({user,onClose,onCreated}){
   return <div className="modal-backdrop"><div className="modal-card wide"><button className="icon-button close-button" onClick={onClose}><X size={18}/></button><div className="modal-title"><Upload size={22}/><div><h2>Post a photo</h2><p>Place it on the map and give other photographers useful details.</p></div></div><form onSubmit={submit} className="form-grid"><div className="field full"><label>Photo</label><label className="upload-zone">{preview?<img src={preview} className="upload-preview"/>:<><Upload size={28}/><span>Choose a JPG, PNG, or WebP</span></>}<input type="file" accept="image/*" onChange={choose} hidden/><button type="button" className="btn secondary" onClick={()=>document.querySelector('.upload-zone input')?.click()}>Choose image</button></label></div><label className="field">Title<input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Golden hour at the bridge" /></label><label className="field">Location<input value={location} onChange={e=>setLocation(e.target.value)} placeholder="Tower Bridge, London" required /></label><label className="field">Camera<input value={camera} onChange={e=>setCamera(e.target.value)} placeholder="Sony A7 IV" /></label><label className="field">Lens<input value={lens} onChange={e=>setLens(e.target.value)} placeholder="24–70mm" /></label><label className="field">Best conditions<input value={conditions} onChange={e=>setConditions(e.target.value)} placeholder="Golden hour, light clouds" /></label><label className="field">Location precision<select value={privacy} onChange={e=>setPrivacy(e.target.value)}><option value="exact">Exact</option><option value="approximate">Approximate</option><option value="hidden">Hide on map</option></select></label><label className="field full">Description<textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="Tell other photographers what makes this spot good…" /></label>{status&&<div className="notice full">{status}</div>}<div className="modal-actions full"><button type="button" className="btn secondary" onClick={onClose}>Cancel</button><button className="btn primary" disabled={busy}>{busy?'Publishing…':'Publish photo'}</button></div></form></div></div>
 }
 
-function SpotPanel({photo,onClose,onSave,saved,onLike}){ if(!photo)return null; return <aside className="spot-panel"><div className="spot-image-wrap"><img src={photo.image_url}/><button className="icon-button image-close" onClick={onClose}><X size={18}/></button><div className="type-badge"><span className={`badge-dot ${photo.type}`}></span>{photo.type==='famous'?'Famous photo':'Community photo'}</div></div><div className="spot-body"><h2>{photo.location_name}</h2><p className="location-line"><MapPin size={14}/>{photo.city}</p><div className="chips">{(photo.tags||[]).map(t=><span key={t} className="chip">{t}</span>)}</div><div className="shot-grid"><div><Camera size={15}/><b>{photo.camera||'Not listed'}</b><span>Camera</span></div><div><Compass size={15}/><b>{photo.lens||'Not listed'}</b><span>Lens</span></div><div><Sun size={15}/><b>{photo.conditions||'Any'}</b><span>Best conditions</span></div><div><UserRound size={15}/><b>{photo.photographer||'Anonymous'}</b><span>Photographer</span></div></div><p className="story">{photo.description||'A LensAtlas photography spot.'}</p><div className="social-row"><button className="social-button" onClick={()=>onLike(photo)}><Heart size={16}/>{photo.likes||0}</button><button className="social-button"><MessageCircle size={16}/>{photo.comments||0}</button><button className={`social-button ${saved?'selected':''}`} onClick={()=>onSave(photo.id)}><Bookmark size={16}/>{saved?'Saved':'Save spot'}</button><button className="social-button" onClick={()=>navigator.clipboard?.writeText(location.href)}><Share2 size={16}/></button></div><button className="btn primary full" onClick={()=>onSave(photo.id)}><Compass size={17}/>Shoot this location</button>{photo.type==='famous'&&<div className="famous-note"><Trophy size={16}/><div><b>Famous photography</b><span>Use the location as inspiration, then create your own version. Images in the archive should be properly credited and licensed.</span></div></div>}</div></aside> }
+function SpotPanel({photo,onClose,onSave,saved,onLike,onComment}){ if(!photo)return null; return <aside className="spot-panel"><div className="spot-image-wrap"><img src={photo.image_url}/><button className="icon-button image-close" onClick={onClose}><X size={18}/></button><div className="type-badge"><span className={`badge-dot ${photo.type}`}></span>{photo.type==='famous'?'Famous photo':'Community photo'}</div></div><div className="spot-body"><h2>{photo.location_name}</h2><p className="location-line"><MapPin size={14}/>{photo.city}</p><div className="chips">{(photo.tags||[]).map(t=><span key={t} className="chip">{t}</span>)}</div><div className="shot-grid"><div><Camera size={15}/><b>{photo.camera||'Not listed'}</b><span>Camera</span></div><div><Compass size={15}/><b>{photo.lens||'Not listed'}</b><span>Lens</span></div><div><Sun size={15}/><b>{photo.conditions||'Any'}</b><span>Best conditions</span></div><div><UserRound size={15}/><b>{photo.photographer||'Anonymous'}</b><span>Photographer</span></div></div><p className="story">{photo.description||'A LensAtlas photography spot.'}</p><div className="social-row"><button className="social-button" onClick={()=>onLike(photo)}><Heart size={16}/>{photo.likes||0}</button><button className="social-button" onClick={()=>onComment(photo)}>
+  <MessageCircle size={16}/>{photo.comments||0}
+</button><button className={`social-button ${saved?'selected':''}`} onClick={()=>onSave(photo.id)}><Bookmark size={16}/>{saved?'Saved':'Save spot'}</button><button className="social-button" onClick={()=>navigator.clipboard?.writeText(location.href)}><Share2 size={16}/></button></div><button className="btn primary full" onClick={()=>onSave(photo.id)}><Compass size={17}/>Shoot this location</button>{photo.type==='famous'&&<div className="famous-note"><Trophy size={16}/><div><b>Famous photography</b><span>Use the location as inspiration, then create your own version. Images in the archive should be properly credited and licensed.</span></div></div>}</div></aside> }
 
 function ProfilePanel({user,onClose,photos,onLogout,onLogin}){ if(!user)return null; const mine=photos.filter(p=>p.photographer===user.name); return <div className="profile-overlay"><div className="profile-sheet"><button className="icon-button" onClick={onClose}><X size={18}/></button><div className="profile-head"><div className="big-avatar">{(user.name||'R').slice(0,1).toUpperCase()}</div><div><h2>{user.name||user.email?.split('@')[0]||'Photographer'}</h2><p>@{user.username||'lensatlas'}</p></div><button className="btn secondary" onClick={user.id==='demo-user'?onLogout:async()=>{await supabase?.auth.signOut(); onLogout();}}><LogOut size={16}/>Log out</button></div><div className="profile-stats"><div><b>{mine.length}</b><span>photos</span></div><div><b>12</b><span>saved spots</span></div><div><b>0</b><span>followers</span></div></div><div className="profile-grid">{mine.map(p=><img key={p.id} src={p.image_url}/>)}</div><div className="profile-foot"><ShieldCheck size={16}/>Your account is ready for follows, likes, comments, and cloud photo storage once Supabase is connected.</div></div></div> }
 
@@ -105,17 +116,121 @@ function App(){
     supabase.auth.getSession().then(({data})=>{ if(data.session?.user) setUser(data.session.user); });
     const {data:sub}=supabase.auth.onAuthStateChange((_e,session)=>setUser(session?.user||null)); return ()=>sub.subscription.unsubscribe();
   },[]);
-  useEffect(()=>{ if(hasSupabase){ supabase.from('photos_view').select('*').order('created_at',{ascending:false}).limit(1000).then(({data})=>{if(data?.length)setPhotos(data)}) }},[]);
+ useEffect(()=>{
+  if(!hasSupabase) return;
+
+  supabase
+    .from('photos_view')
+    .select('*')
+    .order('created_at',{ascending:false})
+    .limit(1000)
+    .then(({data,error})=>{
+      if(error){
+        console.error('Could not load photos:',error);
+        return;
+      }
+
+      const normalized=(data||[])
+        .map(p=>({
+          ...p,
+          lat:Number(p.latitude),
+          lng:Number(p.longitude)
+        }))
+        .filter(p=>Number.isFinite(p.lat)&&Number.isFinite(p.lng));
+
+      setPhotos(normalized);
+    });
+},[]);
   const visible=useMemo(()=>photos.filter(p=>{
     const f=filter==='all'||p.type===filter||(filter==='saved'&&saved.has(p.id)); const q=`${p.title} ${p.location_name} ${p.city} ${p.photographer}`.toLowerCase(); return f && q.includes(query.toLowerCase().trim());
   }),[photos,filter,query,saved]);
   function toggleSave(id){const next=new Set(saved); next.has(id)?next.delete(id):next.add(id);setSaved(next);setLocal('lensatlas_saved',[...next]);}
-  async function toggleLike(p){const next=new Set(liked); if(next.has(p.id))next.delete(p.id); else next.add(p.id); setLiked(next); setLocal('lensatlas_liked',[...next]); setPhotos(prev=>prev.map(x=>x.id===p.id?{...x,likes:Math.max(0,(x.likes||0)+(next.has(p.id)?1:-1))}:x)); if(hasSupabase&&user?.id&&user.id!=='demo-user'){ if(next.has(p.id)) await supabase.from('likes').insert({user_id:user.id,photo_id:p.id}); else await supabase.from('likes').delete().eq('user_id',user.id).eq('photo_id',p.id); }}
+
+  async function toggleLike(p){
+  const next=new Set(liked);
+  const isLiking=!next.has(p.id);
+
+  if(isLiking) next.add(p.id);
+  else next.delete(p.id);
+
+  setLiked(next);
+  setLocal('lensatlas_liked',[...next]);
+
+  const updated={
+    ...p,
+    likes:Math.max(0,(p.likes||0)+(isLiking?1:-1))
+  };
+
+  setPhotos(prev=>prev.map(x=>x.id===p.id?updated:x));
+  setSelected(updated);
+
+  if(hasSupabase&&user?.id&&user.id!=='demo-user'&&!p.id.startsWith('seed-')){
+    if(isLiking){
+      const {error}=await supabase
+        .from('likes')
+        .insert({user_id:user.id,photo_id:p.id});
+
+      if(error) console.error('Like failed:',error);
+    }else{
+      const {error}=await supabase
+        .from('likes')
+        .delete()
+        .eq('user_id',user.id)
+        .eq('photo_id',p.id);
+
+      if(error) console.error('Unlike failed:',error);
+    }
+  }
+}
+async function addComment(p){
+  if(!hasSupabase||!user?.id||user.id==='demo-user'){
+    alert('Please log in to comment.');
+    return;
+  }
+
+  if(p.id.startsWith('seed-')){
+    alert('Comments are available on community photos.');
+    return;
+  }
+
+  const body=window.prompt('Write a comment:');
+
+  if(!body?.trim()) return;
+
+  const {error}=await supabase
+    .from('comments')
+    .insert({
+      user_id:user.id,
+      photo_id:p.id,
+      body:body.trim()
+    });
+
+  if(error){
+    console.error('Comment failed:',error);
+    alert(error.message);
+    return;
+  }
+
+  const updated={
+    ...p,
+    comments:(p.comments||0)+1
+  };
+
+  setPhotos(prev=>prev.map(x=>x.id===p.id?updated:x));
+  setSelected(updated);
+}
   function onCreated(p){setPhotos(prev=>[p,...prev]);}
   const trending=[...photos].sort((a,b)=>(b.likes||0)-(a.likes||0)).slice(0,5);
   return <div className="app"><header className="topbar"><button className="icon-button mobile-menu" onClick={()=>setMobileOpen(!mobileOpen)}><Menu size={20}/></button><div className="brand"><div className="brand-mark">LA</div><div><b>The Lens Atlas</b><span>Photography on the map</span></div></div><div className="top-actions"><button className="btn secondary help" onClick={()=>alert('Explore the map, click a pin, save a spot, and post your own photos. Connect Supabase to turn this into a real multi-user service.')}>How it works</button><button className="btn primary" onClick={()=>user?setShowUpload(true):setShowAuth(true)}><Plus size={17}/>Post a photo</button>{user?<button className="avatar-button" onClick={()=>setShowProfile(true)}>{(user.name||user.email||'R').slice(0,1).toUpperCase()}</button>:<button className="btn secondary" onClick={()=>setShowAuth(true)}><LogIn size={17}/>Log in</button>}</div></header>
     <aside className={`sidebar ${mobileOpen?'open':''}`}><div className="search-wrap"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search cities, landmarks, photographers…"/></div><div className="sidebar-section"><div className="section-title"><span>Explore</span><SlidersHorizontal size={15}/></div><div className="filter-grid">{[['all','All photos'],['community','Community'],['famous','Famous'],['saved','Saved spots']].map(([k,l])=><button key={k} className={`filter-btn ${filter===k?'active':''}`} onClick={()=>{setFilter(k);setMobileOpen(false)}}>{l}</button>)}</div></div><div className="sidebar-section"><div className="section-title">Atlas stats</div><div className="stat-grid"><div className="stat-card"><b>{photos.length}</b><span>photos</span></div><div className="stat-card"><b>{new Set(photos.map(p=>p.location_name)).size}</b><span>spots</span></div></div></div><div className="sidebar-section"><div className="section-title">Trending spots <Sparkles size={15}/></div><div className="mini-list">{trending.map(p=><button className="mini-card" key={p.id} onClick={()=>setSelected(p)}><img src={p.image_url}/><span><b>{p.location_name}</b><small>{p.photographer} · {p.likes||0} likes</small></span><ChevronRight size={14}/></button>)}</div></div><div className="sidebar-section"><div className="section-title">Your account</div>{user?<button className="account-card" onClick={()=>setShowProfile(true)}><div className="big-avatar mini">{(user.name||user.email||'R').slice(0,1).toUpperCase()}</div><span><b>{user.name||user.email}</b><small>Open profile</small></span><ChevronRight size={16}/></button>:<button className="account-card" onClick={()=>setShowAuth(true)}><div className="big-avatar mini"><UserRound size={17}/></div><span><b>Join LensAtlas</b><small>Create a photographer profile</small></span><ChevronRight size={16}/></button>}</div><div className="sidebar-foot"><Globe2 size={15}/>Map data © OpenStreetMap contributors</div></aside>
-    <main className="map-wrap"><div className="map-card"><div><span className="eyebrow"><Compass size={14}/>EXPLORE THE ATLAS</span><h1>Find where great photos happen.</h1><p>{visible.length} mapped photos across the world.</p></div><div className="map-chips"><span className="legend-pill"><i className="legend-dot community"></i>Community</span><span className="legend-pill"><i className="legend-dot famous"></i>Famous</span><span className="legend-pill"><i className="legend-dot saved"></i>Saved</span></div></div><MapView photos={visible} onSelect={setSelected}/><div className="map-bottom-card"><div><b>Plan your next shoot</b><span>Save locations and build your personal shooting list.</span></div>{user?<button className="btn secondary" onClick={()=>alert(`You have ${saved.size} saved spot${saved.size===1?'':'s'}.`)}>Open saved list</button>:<button className="btn primary" onClick={()=>setShowAuth(true)}>Create profile</button>}</div>{selected&&<SpotPanel photo={selected} onClose={()=>setSelected(null)} onSave={toggleSave} saved={saved.has(selected.id)} onLike={toggleLike}/>}</main>
+    <main className="map-wrap"><div className="map-card"><div><span className="eyebrow"><Compass size={14}/>EXPLORE THE ATLAS</span><h1>Find where great photos happen.</h1><p>{visible.length} mapped photos across the world.</p></div><div className="map-chips"><span className="legend-pill"><i className="legend-dot community"></i>Community</span><span className="legend-pill"><i className="legend-dot famous"></i>Famous</span><span className="legend-pill"><i className="legend-dot saved"></i>Saved</span></div></div><MapView photos={visible} onSelect={setSelected}/><div className="map-bottom-card"><div><b>Plan your next shoot</b><span>Save locations and build your personal shooting list.</span></div>{user?<button className="btn secondary" onClick={()=>alert(`You have ${saved.size} saved spot${saved.size===1?'':'s'}.`)}>Open saved list</button>:<button className="btn primary" onClick={()=>setShowAuth(true)}>Create profile</button>}</div>{selected&&<SpotPanel
+  photo={selected}
+  onClose={()=>setSelected(null)}
+  onSave={toggleSave}
+  saved={saved.has(selected.id)}
+  onLike={toggleLike}
+  onComment={addComment}
+/>}</main>
     {showUpload&&<UploadModal user={user} onClose={()=>setShowUpload(false)} onCreated={onCreated}/>} {showAuth&&<AuthModal onClose={()=>setShowAuth(false)} onAuth={u=>{setUser(u);setLocal('lensatlas_user',u)}}/>} {showProfile&&<ProfilePanel user={user} onClose={()=>setShowProfile(false)} photos={photos} onLogout={()=>{setUser(null);localStorage.removeItem('lensatlas_user');setShowProfile(false)}} onLogin={()=>setShowAuth(true)}/>}<div className="mode-pill">{hasSupabase?<><ShieldCheck size={14}/>Live cloud mode</>:<><Camera size={14}/>Demo mode</>}</div>
   </div>
 }
