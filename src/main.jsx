@@ -105,12 +105,99 @@ function UploadModal({user,onClose,onCreated}){
 function SpotPanel({photo,onClose,onSave,saved,onLike,onComment}){ if(!photo)return null; return <aside className="spot-panel"><div className="spot-image-wrap"><img src={photo.image_url}/><button className="icon-button image-close" onClick={onClose}><X size={18}/></button><div className="type-badge"><span className={`badge-dot ${photo.type}`}></span>{photo.type==='famous'?'Famous photo':'Community photo'}</div></div><div className="spot-body"><h2>{photo.location_name}</h2><p className="location-line"><MapPin size={14}/>{photo.city}</p><div className="chips">{(photo.tags||[]).map(t=><span key={t} className="chip">{t}</span>)}</div><div className="shot-grid"><div><Camera size={15}/><b>{photo.camera||'Not listed'}</b><span>Camera</span></div><div><Compass size={15}/><b>{photo.lens||'Not listed'}</b><span>Lens</span></div><div><Sun size={15}/><b>{photo.conditions||'Any'}</b><span>Best conditions</span></div><div><UserRound size={15}/><b>{photo.photographer||'Anonymous'}</b><span>Photographer</span></div></div><p className="story">{photo.description||'A LensAtlas photography spot.'}</p><div className="social-row"><button className="social-button" onClick={()=>onLike(photo)}><Heart size={16}/>{photo.likes||0}</button><button className="social-button" onClick={()=>onComment(photo)}>
   <MessageCircle size={16}/>{photo.comments||0}
 </button><button className={`social-button ${saved?'selected':''}`} onClick={()=>onSave(photo.id)}><Bookmark size={16}/>{saved?'Saved':'Save spot'}</button><button className="social-button" onClick={()=>navigator.clipboard?.writeText(location.href)}><Share2 size={16}/></button></div><button className="btn primary full" onClick={()=>onSave(photo.id)}><Compass size={17}/>Shoot this location</button>{photo.type==='famous'&&<div className="famous-note"><Trophy size={16}/><div><b>Famous photography</b><span>Use the location as inspiration, then create your own version. Images in the archive should be properly credited and licensed.</span></div></div>}</div></aside> }
+function CommentsPanel({
+  photo,
+  comments,
+  loading,
+  commentText,
+  setCommentText,
+  onPost,
+  onClose
+}){
+  if(!photo) return null;
 
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card">
+        <button
+          className="icon-button close-button"
+          onClick={onClose}
+        >
+          <X size={18}/>
+        </button>
+
+        <div className="modal-title">
+          <MessageCircle size={22}/>
+          <div>
+            <h2>Comments</h2>
+            <p>{photo.location_name}</p>
+          </div>
+        </div>
+
+        <div className="comments-list">
+          {loading ? (
+            <p>Loading comments…</p>
+          ) : comments.length === 0 ? (
+            <p>No comments yet. Be the first to comment.</p>
+          ) : (
+            comments.map(comment => (
+              <div className="comment-item" key={comment.id}>
+                <div className="big-avatar mini">
+                  <UserRound size={16}/>
+                </div>
+
+                <div>
+                  <b>
+                    {comment.profiles?.display_name ||
+                     comment.profiles?.username ||
+                     'Photographer'}
+                  </b>
+
+                  <p>{comment.body}</p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <form
+          onSubmit={e=>{
+            e.preventDefault();
+            onPost(photo);
+          }}
+          className="stack"
+        >
+          <textarea
+            value={commentText}
+            onChange={e=>setCommentText(e.target.value)}
+            placeholder="Write a comment…"
+            maxLength={1200}
+          />
+
+          <button
+            className="btn primary full"
+            disabled={!commentText.trim()}
+          >
+            Post comment
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
 function ProfilePanel({user,onClose,photos,onLogout,onLogin}){ if(!user)return null; const mine=photos.filter(p=>p.photographer===user.name); return <div className="profile-overlay"><div className="profile-sheet"><button className="icon-button" onClick={onClose}><X size={18}/></button><div className="profile-head"><div className="big-avatar">{(user.name||'R').slice(0,1).toUpperCase()}</div><div><h2>{user.name||user.email?.split('@')[0]||'Photographer'}</h2><p>@{user.username||'lensatlas'}</p></div><button className="btn secondary" onClick={user.id==='demo-user'?onLogout:async()=>{await supabase?.auth.signOut(); onLogout();}}><LogOut size={16}/>Log out</button></div><div className="profile-stats"><div><b>{mine.length}</b><span>photos</span></div><div><b>12</b><span>saved spots</span></div><div><b>0</b><span>followers</span></div></div><div className="profile-grid">{mine.map(p=><img key={p.id} src={p.image_url}/>)}</div><div className="profile-foot"><ShieldCheck size={16}/>Your account is ready for follows, likes, comments, and cloud photo storage once Supabase is connected.</div></div></div> }
 
 function App(){
   const [photos,setPhotos]=useState(()=>[...seedPhotos,...getLocal('lensatlas_photos',[])]);
-  const [filter,setFilter]=useState('all'); const [query,setQuery]=useState(''); const [selected,setSelected]=useState(null); const [saved,setSaved]=useState(()=>new Set(getLocal('lensatlas_saved',[]))); const [liked,setLiked]=useState(()=>new Set(getLocal('lensatlas_liked',[]))); const [showUpload,setShowUpload]=useState(false); const [showAuth,setShowAuth]=useState(false); const [user,setUser]=useState(()=>getLocal('lensatlas_user',null)); const [showProfile,setShowProfile]=useState(false); const [mobileOpen,setMobileOpen]=useState(false);
+  const [filter,setFilter]=useState('all');
+  const [query,setQuery]=useState('');
+  const [selected,setSelected]=useState(null); 
+  
+  const [showComments,setShowComments]=useState(false);
+const [commentsList,setCommentsList]=useState([]);
+const [commentText,setCommentText]=useState('');
+const [commentsLoading,setCommentsLoading]=useState(false); 
+const [saved,setSaved]=useState(()=>new Set(getLocal('lensatlas_saved',[]))); const [liked,setLiked]=useState(()=>new Set(getLocal('lensatlas_liked',[]))); const [showUpload,setShowUpload]=useState(false); const [showAuth,setShowAuth]=useState(false); const [user,setUser]=useState(()=>getLocal('lensatlas_user',null)); const [showProfile,setShowProfile]=useState(false); const [mobileOpen,setMobileOpen]=useState(false);
   useEffect(()=>{
     if(!hasSupabase) return;
     supabase.auth.getSession().then(({data})=>{ if(data.session?.user) setUser(data.session.user); });
@@ -182,6 +269,45 @@ function App(){
     }
   }
 }
+async function openComments(p){
+  if(!hasSupabase){
+    alert('Comments require Live cloud mode.');
+    return;
+  }
+
+  if(p.id.startsWith('seed-')){
+    alert('Comments are available on community photos.');
+    return;
+  }
+
+  setSelected(p);
+  setShowComments(true);
+  setCommentsLoading(true);
+
+  const {data,error}=await supabase
+    .from('comments')
+    .select(`
+      id,
+      body,
+      created_at,
+      user_id,
+      profiles (
+        display_name,
+        username
+      )
+    `)
+    .eq('photo_id',p.id)
+    .order('created_at',{ascending:true});
+
+  if(error){
+    console.error('Could not load comments:',error);
+    setCommentsList([]);
+  }else{
+    setCommentsList(data||[]);
+  }
+
+  setCommentsLoading(false);
+}
 async function addComment(p){
   if(!hasSupabase||!user?.id||user.id==='demo-user'){
     alert('Please log in to comment.');
@@ -193,23 +319,37 @@ async function addComment(p){
     return;
   }
 
-  const body=window.prompt('Write a comment:');
+  const body=commentText.trim();
 
-  if(!body?.trim()) return;
+  if(!body) return;
 
-  const {error}=await supabase
+  const {data,error}=await supabase
     .from('comments')
     .insert({
       user_id:user.id,
       photo_id:p.id,
-      body:body.trim()
-    });
+      body
+    })
+    .select(`
+      id,
+      body,
+      created_at,
+      user_id,
+      profiles (
+        display_name,
+        username
+      )
+    `)
+    .single();
 
   if(error){
     console.error('Comment failed:',error);
     alert(error.message);
     return;
   }
+
+  setCommentsList(prev=>[...prev,data]);
+  setCommentText('');
 
   const updated={
     ...p,
@@ -229,8 +369,22 @@ async function addComment(p){
   onSave={toggleSave}
   saved={saved.has(selected.id)}
   onLike={toggleLike}
-  onComment={addComment}
+ onComment={openComments}
 />}</main>
+{showComments&&selected&&(
+  <CommentsPanel
+    photo={selected}
+    comments={commentsList}
+    loading={commentsLoading}
+    commentText={commentText}
+    setCommentText={setCommentText}
+    onPost={addComment}
+    onClose={()=>{
+      setShowComments(false);
+      setCommentText('');
+    }}
+  />
+)}
     {showUpload&&<UploadModal user={user} onClose={()=>setShowUpload(false)} onCreated={onCreated}/>} {showAuth&&<AuthModal onClose={()=>setShowAuth(false)} onAuth={u=>{setUser(u);setLocal('lensatlas_user',u)}}/>} {showProfile&&<ProfilePanel user={user} onClose={()=>setShowProfile(false)} photos={photos} onLogout={()=>{setUser(null);localStorage.removeItem('lensatlas_user');setShowProfile(false)}} onLogin={()=>setShowAuth(true)}/>}<div className="mode-pill">{hasSupabase?<><ShieldCheck size={14}/>Live cloud mode</>:<><Camera size={14}/>Demo mode</>}</div>
   </div>
 }
