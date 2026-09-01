@@ -185,9 +185,66 @@ function CommentsPanel({
     </div>
   );
 }
+function HowItWorksModal({onClose}){
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card">
+        <button
+          className="icon-button close-button"
+          onClick={onClose}
+        >
+          <X size={18}/>
+        </button>
+
+        <div className="modal-title">
+          <Compass size={22}/>
+          <div>
+            <h2>How The Lens Atlas Works</h2>
+            <p>Discover great photography locations around the world.</p>
+          </div>
+        </div>
+
+        <div className="stack">
+          <div>
+            <h3>1. Explore the map</h3>
+            <p>Click photo pins to discover photography locations, camera settings, conditions, and tips.</p>
+          </div>
+
+          <div>
+            <h3>2. Find inspiration</h3>
+            <p>See photos taken by other photographers and learn where and how they captured them.</p>
+          </div>
+
+          <div>
+            <h3>3. Save locations</h3>
+            <p>Save photography spots so you can plan future shoots.</p>
+          </div>
+
+          <div>
+            <h3>4. Share your photos</h3>
+            <p>Upload your own photos and place them on the map for other photographers to discover.</p>
+          </div>
+
+          <div>
+            <h3>5. Join the community</h3>
+            <p>Like photos, leave comments, and discover photographers around the world.</p>
+          </div>
+        </div>
+
+        <button
+          className="btn primary full"
+          onClick={onClose}
+        >
+          Start exploring
+        </button>
+      </div>
+    </div>
+  );
+}
 function ProfilePanel({user,onClose,photos,onLogout,onLogin}){ if(!user)return null; const mine=photos.filter(p=>p.photographer===user.name); return <div className="profile-overlay"><div className="profile-sheet"><button className="icon-button" onClick={onClose}><X size={18}/></button><div className="profile-head"><div className="big-avatar">{(user.name||'R').slice(0,1).toUpperCase()}</div><div><h2>{user.name||user.email?.split('@')[0]||'Photographer'}</h2><p>@{user.username||'lensatlas'}</p></div><button className="btn secondary" onClick={user.id==='demo-user'?onLogout:async()=>{await supabase?.auth.signOut(); onLogout();}}><LogOut size={16}/>Log out</button></div><div className="profile-stats"><div><b>{mine.length}</b><span>photos</span></div><div><b>12</b><span>saved spots</span></div><div><b>0</b><span>followers</span></div></div><div className="profile-grid">{mine.map(p=><img key={p.id} src={p.image_url}/>)}</div><div className="profile-foot"><ShieldCheck size={16}/>Your account is ready for follows, likes, comments, and cloud photo storage once Supabase is connected.</div></div></div> }
 
 function App(){
+  const [showHowItWorks,setShowHowItWorks]=useState(false);
   const [photos,setPhotos]=useState(()=>[...seedPhotos,...getLocal('lensatlas_photos',[])]);
   const [filter,setFilter]=useState('all');
   const [query,setQuery]=useState('');
@@ -361,7 +418,62 @@ async function addComment(p){
 }
   function onCreated(p){setPhotos(prev=>[p,...prev]);}
   const trending=[...photos].sort((a,b)=>(b.likes||0)-(a.likes||0)).slice(0,5);
-  return <div className="app"><header className="topbar"><button className="icon-button mobile-menu" onClick={()=>setMobileOpen(!mobileOpen)}><Menu size={20}/></button><div className="brand"><div className="brand-mark">LA</div><div><b>The Lens Atlas</b><span>Photography on the map</span></div></div><div className="top-actions"><button className="btn secondary help" onClick={()=>alert('Explore the map, click a pin, save a spot, and post your own photos. Connect Supabase to turn this into a real multi-user service.')}>How it works</button><button className="btn primary" onClick={()=>user?setShowUpload(true):setShowAuth(true)}><Plus size={17}/>Post a photo</button>{user?<button className="avatar-button" onClick={()=>setShowProfile(true)}>{(user.name||user.email||'R').slice(0,1).toUpperCase()}</button>:<button className="btn secondary" onClick={()=>setShowAuth(true)}><LogIn size={17}/>Log in</button>}</div></header>
+
+return (
+  <div className="app">
+    <header className="topbar">
+
+      <button
+        className="icon-button mobile-menu"
+        onClick={()=>setMobileOpen(!mobileOpen)}
+      >
+        <Menu size={20}/>
+      </button>
+
+      <div className="brand">
+        <div className="brand-mark">LA</div>
+        <div>
+          <b>The Lens Atlas</b>
+          <span>Photography on the map</span>
+        </div>
+      </div>
+
+      <div className="top-actions">
+
+        <button
+          className="btn secondary help"
+          onClick={()=>setShowHowItWorks(true)}
+        >
+          How it works
+        </button>
+
+        <button
+          className="btn primary"
+          onClick={()=>user ? setShowUpload(true) : setShowAuth(true)}
+        >
+          <Plus size={17}/>
+          Post a photo
+        </button>
+
+        {user ? (
+          <button
+            className="avatar-button"
+            onClick={()=>setShowProfile(true)}
+          >
+            {(user.name||user.email||'R').slice(0,1).toUpperCase()}
+          </button>
+        ) : (
+          <button
+            className="btn secondary"
+            onClick={()=>setShowAuth(true)}
+          >
+            <LogIn size={17}/>
+            Log in
+          </button>
+        )}
+
+      </div>
+    </header>
     <aside className={`sidebar ${mobileOpen?'open':''}`}><div className="search-wrap"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search cities, landmarks, photographers…"/></div><div className="sidebar-section"><div className="section-title"><span>Explore</span><SlidersHorizontal size={15}/></div><div className="filter-grid">{[['all','All photos'],['community','Community'],['famous','Famous'],['saved','Saved spots']].map(([k,l])=><button key={k} className={`filter-btn ${filter===k?'active':''}`} onClick={()=>{setFilter(k);setMobileOpen(false)}}>{l}</button>)}</div></div><div className="sidebar-section"><div className="section-title">Atlas stats</div><div className="stat-grid"><div className="stat-card"><b>{photos.length}</b><span>photos</span></div><div className="stat-card"><b>{new Set(photos.map(p=>p.location_name)).size}</b><span>spots</span></div></div></div><div className="sidebar-section"><div className="section-title">Trending spots <Sparkles size={15}/></div><div className="mini-list">{trending.map(p=><button className="mini-card" key={p.id} onClick={()=>setSelected(p)}><img src={p.image_url}/><span><b>{p.location_name}</b><small>{p.photographer} · {p.likes||0} likes</small></span><ChevronRight size={14}/></button>)}</div></div><div className="sidebar-section"><div className="section-title">Your account</div>{user?<button className="account-card" onClick={()=>setShowProfile(true)}><div className="big-avatar mini">{(user.name||user.email||'R').slice(0,1).toUpperCase()}</div><span><b>{user.name||user.email}</b><small>Open profile</small></span><ChevronRight size={16}/></button>:<button className="account-card" onClick={()=>setShowAuth(true)}><div className="big-avatar mini"><UserRound size={17}/></div><span><b>Join LensAtlas</b><small>Create a photographer profile</small></span><ChevronRight size={16}/></button>}</div><div className="sidebar-foot"><Globe2 size={15}/>Map data © OpenStreetMap contributors</div></aside>
     <main className="map-wrap"><div className="map-card"><div><span className="eyebrow"><Compass size={14}/>EXPLORE THE ATLAS</span><h1>Find where great photos happen.</h1><p>{visible.length} mapped photos across the world.</p></div><div className="map-chips"><span className="legend-pill"><i className="legend-dot community"></i>Community</span><span className="legend-pill"><i className="legend-dot famous"></i>Famous</span><span className="legend-pill"><i className="legend-dot saved"></i>Saved</span></div></div><MapView photos={visible} onSelect={setSelected}/><div className="map-bottom-card"><div><b>Plan your next shoot</b><span>Save locations and build your personal shooting list.</span></div>{user?<button className="btn secondary" onClick={()=>alert(`You have ${saved.size} saved spot${saved.size===1?'':'s'}.`)}>Open saved list</button>:<button className="btn primary" onClick={()=>setShowAuth(true)}>Create profile</button>}</div>{selected&&<SpotPanel
   photo={selected}
@@ -385,8 +497,14 @@ async function addComment(p){
     }}
   />
 )}
+{showHowItWorks&&(
+  <HowItWorksModal
+    onClose={()=>setShowHowItWorks(false)}
+  />
+)}
     {showUpload&&<UploadModal user={user} onClose={()=>setShowUpload(false)} onCreated={onCreated}/>} {showAuth&&<AuthModal onClose={()=>setShowAuth(false)} onAuth={u=>{setUser(u);setLocal('lensatlas_user',u)}}/>} {showProfile&&<ProfilePanel user={user} onClose={()=>setShowProfile(false)} photos={photos} onLogout={()=>{setUser(null);localStorage.removeItem('lensatlas_user');setShowProfile(false)}} onLogin={()=>setShowAuth(true)}/>}<div className="mode-pill">{hasSupabase?<><ShieldCheck size={14}/>Live cloud mode</>:<><Camera size={14}/>Demo mode</>}</div>
-  </div>
+    </div>
+  );
 }
 
 createRoot(document.getElementById('root')).render(<App/>);
