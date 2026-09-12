@@ -185,6 +185,70 @@ function CommentsPanel({
     </div>
   );
 }
+function SavedSpotsPanel({photos,saved,onClose,onSelect,onToggleSave}){
+  const savedPhotos=photos.filter(p=>saved.has(p.id));
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal-card wide">
+        <button
+          className="icon-button close-button"
+          onClick={onClose}
+        >
+          <X size={18}/>
+        </button>
+
+        <div className="modal-title">
+          <Bookmark size={22}/>
+          <div>
+            <h2>Saved Spots</h2>
+            <p>Your photography locations to revisit later.</p>
+          </div>
+        </div>
+
+        {savedPhotos.length===0 ? (
+          <div className="stack">
+            <p>You haven't saved any spots yet.</p>
+
+            <button
+              className="btn primary"
+              onClick={onClose}
+            >
+              Explore the map
+            </button>
+          </div>
+        ) : (
+          <div className="mini-list">
+            {savedPhotos.map(photo=>(
+              <div className="mini-card" key={photo.id}>
+                <img src={photo.image_url}/>
+
+                <span
+                  style={{flex:1,cursor:'pointer'}}
+                  onClick={()=>{
+                    onSelect(photo);
+                    onClose();
+                  }}
+                >
+                  <b>{photo.location_name}</b>
+                  <small>{photo.city}</small>
+                </span>
+
+                <button
+                  className="icon-button"
+                  onClick={()=>onToggleSave(photo.id)}
+                  title="Remove saved spot"
+                >
+                  <X size={16}/>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 function HowItWorksModal({onClose}){
   return (
     <div className="modal-backdrop">
@@ -245,6 +309,8 @@ function ProfilePanel({user,onClose,photos,onLogout,onLogin}){ if(!user)return n
 
 function App(){
   const [showHowItWorks,setShowHowItWorks]=useState(false);
+  const [showSavedList,setShowSavedList]=useState(false);
+  
   const [photos,setPhotos]=useState(()=>[...seedPhotos,...getLocal('lensatlas_photos',[])]);
   const [filter,setFilter]=useState('all');
   const [query,setQuery]=useState('');
@@ -285,10 +351,87 @@ const [saved,setSaved]=useState(()=>new Set(getLocal('lensatlas_saved',[]))); co
       setPhotos(normalized);
     });
 },[]);
+useEffect(()=>{
+  if(!hasSupabase || !user?.id || user.id==='demo-user') return;
+
+  supabase
+    .from('saved_spots')
+    .select('photo_id')
+    .eq('user_id',user.id)
+    .then(({data,error})=>{
+      if(error){
+        console.error('Could not load saved spots:',error);
+        return;
+      }
+
+      const cloudSaved=new Set((data||[]).map(item=>item.photo_id));
+
+      setSaved(cloudSaved);
+      setLocal('lensatlas_saved',[...cloudSaved]);
+    });
+},[user]);
   const visible=useMemo(()=>photos.filter(p=>{
     const f=filter==='all'||p.type===filter||(filter==='saved'&&saved.has(p.id)); const q=`${p.title} ${p.location_name} ${p.city} ${p.photographer}`.toLowerCase(); return f && q.includes(query.toLowerCase().trim());
   }),[photos,filter,query,saved]);
-  function toggleSave(id){const next=new Set(saved); next.has(id)?next.delete(id):next.add(id);setSaved(next);setLocal('lensatlas_saved',[...next]);}
+  async function toggleSave(id){
+  const next=new Set(saved);
+  const isSaving=!next.has(id);
+
+  if(isSaving){
+    next.add(id);
+  }else{
+    next.delete(id);
+  }
+
+  setSaved(next);
+  setLocal('lensatlas_saved',[...next]);
+
+  if(!hasSupabase || !user?.id || user.id==='demo-user'){
+    return;
+  }
+
+  if(String(id).startsWith('seed-')){
+    return;
+  }
+
+  let error;
+
+  if(isSaving){
+    const result=await supabase
+      .from('saved_spots')
+      .insert({
+        user_id:user.id,
+        photo_id:id
+      });
+
+    error=result.error;
+  }else{
+    const result=await supabase
+      .from('saved_spots')
+      .delete()
+      .eq('user_id',user.id)
+      .eq('photo_id',id);
+
+    error=result.error;
+  }
+
+  if(error){
+    console.error('Could not update saved spot:',error);
+
+    const rollback=new Set(next);
+
+    if(isSaving){
+      rollback.delete(id);
+    }else{
+      rollback.add(id);
+    }
+
+    setSaved(rollback);
+    setLocal('lensatlas_saved',[...rollback]);
+
+    alert('Could not update your saved spots.');
+  }
+}
 
   async function toggleLike(p){
   const next=new Set(liked);
@@ -475,14 +618,82 @@ return (
       </div>
     </header>
     <aside className={`sidebar ${mobileOpen?'open':''}`}><div className="search-wrap"><Search size={17}/><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search cities, landmarks, photographers…"/></div><div className="sidebar-section"><div className="section-title"><span>Explore</span><SlidersHorizontal size={15}/></div><div className="filter-grid">{[['all','All photos'],['community','Community'],['famous','Famous'],['saved','Saved spots']].map(([k,l])=><button key={k} className={`filter-btn ${filter===k?'active':''}`} onClick={()=>{setFilter(k);setMobileOpen(false)}}>{l}</button>)}</div></div><div className="sidebar-section"><div className="section-title">Atlas stats</div><div className="stat-grid"><div className="stat-card"><b>{photos.length}</b><span>photos</span></div><div className="stat-card"><b>{new Set(photos.map(p=>p.location_name)).size}</b><span>spots</span></div></div></div><div className="sidebar-section"><div className="section-title">Trending spots <Sparkles size={15}/></div><div className="mini-list">{trending.map(p=><button className="mini-card" key={p.id} onClick={()=>setSelected(p)}><img src={p.image_url}/><span><b>{p.location_name}</b><small>{p.photographer} · {p.likes||0} likes</small></span><ChevronRight size={14}/></button>)}</div></div><div className="sidebar-section"><div className="section-title">Your account</div>{user?<button className="account-card" onClick={()=>setShowProfile(true)}><div className="big-avatar mini">{(user.name||user.email||'R').slice(0,1).toUpperCase()}</div><span><b>{user.name||user.email}</b><small>Open profile</small></span><ChevronRight size={16}/></button>:<button className="account-card" onClick={()=>setShowAuth(true)}><div className="big-avatar mini"><UserRound size={17}/></div><span><b>Join LensAtlas</b><small>Create a photographer profile</small></span><ChevronRight size={16}/></button>}</div><div className="sidebar-foot"><Globe2 size={15}/>Map data © OpenStreetMap contributors</div></aside>
-    <main className="map-wrap"><div className="map-card"><div><span className="eyebrow"><Compass size={14}/>EXPLORE THE ATLAS</span><h1>Find where great photos happen.</h1><p>{visible.length} mapped photos across the world.</p></div><div className="map-chips"><span className="legend-pill"><i className="legend-dot community"></i>Community</span><span className="legend-pill"><i className="legend-dot famous"></i>Famous</span><span className="legend-pill"><i className="legend-dot saved"></i>Saved</span></div></div><MapView photos={visible} onSelect={setSelected}/><div className="map-bottom-card"><div><b>Plan your next shoot</b><span>Save locations and build your personal shooting list.</span></div>{user?<button className="btn secondary" onClick={()=>alert(`You have ${saved.size} saved spot${saved.size===1?'':'s'}.`)}>Open saved list</button>:<button className="btn primary" onClick={()=>setShowAuth(true)}>Create profile</button>}</div>{selected&&<SpotPanel
-  photo={selected}
-  onClose={()=>setSelected(null)}
-  onSave={toggleSave}
-  saved={saved.has(selected.id)}
-  onLike={toggleLike}
- onComment={openComments}
-/>}</main>
+<main className="map-wrap">
+
+  <div className="map-card">
+    <div>
+      <span className="eyebrow">
+        <Compass size={14}/>
+        EXPLORE THE ATLAS
+      </span>
+
+      <h1>Find where great photos happen.</h1>
+
+      <p>
+        {visible.length} mapped photos across the world.
+      </p>
+    </div>
+
+    <div className="map-chips">
+      <span className="legend-pill">
+        <i className="legend-dot community"></i>
+        Community
+      </span>
+
+      <span className="legend-pill">
+        <i className="legend-dot famous"></i>
+        Famous
+      </span>
+
+      <span className="legend-pill">
+        <i className="legend-dot saved"></i>
+        Saved
+      </span>
+    </div>
+  </div>
+
+  <MapView
+    photos={visible}
+    onSelect={setSelected}
+  />
+
+  <div className="map-bottom-card">
+    <div>
+      <b>Plan your next shoot</b>
+      <span>
+        Save locations and build your personal shooting list.
+      </span>
+    </div>
+
+    {user ? (
+      <button
+        className="btn secondary"
+        onClick={()=>setShowSavedList(true)}
+      >
+        Open saved list
+      </button>
+    ) : (
+      <button
+        className="btn primary"
+        onClick={()=>setShowAuth(true)}
+      >
+        Create profile
+      </button>
+    )}
+  </div>
+
+  {selected&&(
+    <SpotPanel
+      photo={selected}
+      onClose={()=>setSelected(null)}
+      onSave={toggleSave}
+      saved={saved.has(selected.id)}
+      onLike={toggleLike}
+      onComment={openComments}
+    />
+  )}
+
+</main>
 {showComments&&selected&&(
   <CommentsPanel
     photo={selected}
@@ -495,6 +706,15 @@ return (
       setShowComments(false);
       setCommentText('');
     }}
+  />
+)}
+{showSavedList&&(
+  <SavedSpotsPanel
+    photos={photos}
+    saved={saved}
+    onClose={()=>setShowSavedList(false)}
+    onSelect={setSelected}
+    onToggleSave={toggleSave}
   />
 )}
 {showHowItWorks&&(
